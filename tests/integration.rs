@@ -289,3 +289,67 @@ fn detects_pom_xml_exec_plugin() {
     let t = threats.iter().find(|t| t.threat_type.contains("Maven")).unwrap();
     assert_eq!(t.level, ThreatLevel::Critical);
 }
+
+// ── rule: checkout safety with detached worktrees and pulls ───────────────
+
+#[test]
+fn checkout_handles_active_and_remote_branches() {
+    use std::process::Command;
+    use git_moat::domain::service::SafeGitService;
+    use git_moat::adapters::local_git::LocalGitClient;
+    use git_moat::adapters::threat_analyzer::CompositeThreatAnalyzer;
+    use git_moat::adapters::local_sanitizer::LocalRepositorySanitizer;
+
+    let dir = tmp_dir();
+
+    // Init master
+    Command::new("git").arg("init").current_dir(&dir).output().unwrap();
+    Command::new("git").args(["config", "user.name", "test"]).current_dir(&dir).output().unwrap();
+    Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(&dir).output().unwrap();
+    
+    fs::write(dir.join("a.txt"), "hello").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(&dir).output().unwrap();
+    Command::new("git").args(["commit", "-m", "first"]).current_dir(&dir).output().unwrap();
+
+    // Create a branch named "dev" and switch back to master/main (using master since git init defaults to master in many old settings)
+    let active_branch = String::from_utf8_lossy(
+        &Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+            .stdout
+    ).trim().to_string();
+
+    Command::new("git").args(["checkout", "-b", "dev"]).current_dir(&dir).output().unwrap();
+    fs::write(dir.join("b.txt"), "hello").unwrap();
+    Command::new("git").args(["add", "."]).current_dir(&dir).output().unwrap();
+    Command::new("git").args(["commit", "-m", "dev commit"]).current_dir(&dir).output().unwrap();
+
+    // Switch back to active_branch (master/main)
+    Command::new("git").args(["checkout", &active_branch]).current_dir(&dir).output().unwrap();
+
+    let service = SafeGitService::new(LocalGitClient, CompositeThreatAnalyzer::new(), LocalRepositorySanitizer);
+
+    // Scan checkout to dev branch, which is NOT active
+    let report = service.execute_checkout(&dir, "dev").unwrap();
+    assert!(report.remediations.is_empty(), "expected clean checkout, got {:?}", report.remediations);
+
+    // Verify checked out branch is now dev
+    let current = String::from_utf8_lossy(
+        &Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+            .stdout
+    ).trim().to_string();
+    assert_eq!(current, "dev");
+
+    // Scan checkout to dev AGAIN (which is now active)
+    let report2 = service.execute_checkout(&dir, "dev").unwrap();
+    assert!(report2.remediations.is_empty(), "expected clean checkout on same active branch");
+
+    fs::remove_dir_all(&dir).ok();
+}
+
