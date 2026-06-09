@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="git-moat-logo.png" alt="git-moat logo" width="320" />
+</p>
+
 # git-moat
 
 > A security-aware git wrapper that detects and neutralises supply-chain attack vectors **before you open, switch to, or pull into a repository or branch**.
