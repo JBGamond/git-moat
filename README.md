@@ -1,8 +1,8 @@
 # git-moat
 
-> A security-aware `git clone` wrapper that detects and neutralises supply-chain attack vectors **before you open a repository**.
+> A security-aware git wrapper that detects and neutralises supply-chain attack vectors **before you open or switch to a repository or branch**.
 
-Cloning a repository has always felt safe. [That changed](https://safedep.io/miasma-worm-ai-coding-agent-config-injection/) when the Miasma worm targeted developers by planting auto-executing payloads inside AI coding agent configs, VS Code tasks, and NPM scripts — triggered the moment a folder is opened, not when a package is installed. **git-moat** stands at the drawbridge: it clones the repository, scans every known attack surface, and removes threats in place before any tool can fire them.
+Cloning a repository has always felt safe. [That changed](https://safedep.io/miasma-worm-ai-coding-agent-config-injection/) when the Miasma worm targeted developers by planting auto-executing payloads inside AI coding agent configs, VS Code tasks, and NPM scripts — triggered the moment a folder is opened, not when a package is installed. **git-moat** stands at the drawbridge: it clones or checks out the branch, scans every known attack surface in a temporary worktree, and blocks or remediates threats before any tool can fire them.
 
 ---
 
@@ -22,14 +22,28 @@ Requires [Rust](https://rustup.rs) ≥ 1.70.
 
 ## Usage
 
-Use `git-moat clone` anywhere you would use `git clone`. All standard git flags are forwarded transparently.
+### Clone
+
+Drop-in replacement for `git clone`. All standard git flags are forwarded transparently.
 
 ```bash
 git-moat clone https://github.com/org/repo
 git-moat clone --depth 1 -b main https://github.com/org/repo ./local-dir
 ```
 
-### Example output
+### Checkout
+
+Scan a branch **before** switching to it. git-moat checks out the branch into a temporary worktree, runs all threat rules against it, removes the worktree, then performs the real switch only if the branch is safe.
+
+```bash
+git-moat checkout feature/new-api
+```
+
+- **Critical or High threats found** → checkout is blocked, threats are printed, exit 1.
+- **Medium threats found** → checkout proceeds with a warning.
+- **No threats** → switches normally.
+
+### Example output — clone
 
 ```
 git-moat — secure clone v0.1.0
@@ -58,6 +72,28 @@ Scanning for threats in ./repo
   Action: DELETED
 
 2 threat(s) found and neutralised. Repository is safe to open.
+```
+
+### Example output — checkout
+
+```
+====================================================
+git-moat Scanning branch: feature/backdoored
+git-moat Repository:      /home/user/my-project
+====================================================
+
+Scanning branch in temporary worktree — working tree untouched...
+  -> [1/8] Scanning for direct payloads and droppers (.github/setup.js)...
+  ...
+
+⚠️  SECURITY ALERT: CHECKOUT BLOCKED ⚠️
+Branch contains Critical/High threats. Checkout was aborted.
+Remove the threat vectors from the branch before switching.
+
+1. [CRITICAL] Claude Session Hook Injection (.claude/settings.json)
+   Description: Found Claude settings with a SessionStart hook executing
+   shell command(s): ["node .github/setup.js"]
+   Remediation: i Logged only (scan-only or commit-log anomaly).
 ```
 
 ---
