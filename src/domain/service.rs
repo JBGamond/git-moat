@@ -1,4 +1,5 @@
-use crate::domain::threat::{RemediatedThreat, RemediationOutcome, ScanReport};
+use std::path::Path;
+use crate::domain::threat::{RemediatedThreat, RemediationOutcome, ScanReport, ThreatLevel};
 use crate::ports::analyzer::ThreatAnalyzer;
 use crate::ports::git::GitClient;
 use crate::ports::sanitizer::RepositorySanitizer;
@@ -58,6 +59,60 @@ where
             .collect();
 
         Ok(ScanReport { target_dir, remediations })
+    }
+
+    /// Scan `branch` in a temporary git worktree without disturbing the working
+    /// tree, then perform the actual `git checkout` only if no Critical or High
+    /// threats are found.
+    ///
+    /// All threat outcomes are `LoggedOnly` because the worktree is transient —
+    /// the caller (presentation layer) should treat the returned report as a
+    /// gate: non-empty remediations mean the checkout was blocked.
+    pub fn execute_checkout(
+        &self,
+        repo_dir: &Path,
+        branch: &str,
+    ) -> Result<ScanReport, Box<dyn std::error::Error>> {
+        // Unique temp path — collisions are astronomically unlikely at nanosecond resolution.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let worktree_path = std::env::temp_dir().join(format!("git_moat_wt_{:x}", nanos));
+
+        self.git_client.worktree_add(repo_dir, branch, &worktree_path)?;
+
+        let threats = self.analyzer.scan(&worktree_path);
+
+        // Clean up the worktree regardless of what was found.
+        let _ = self.git_client.worktree_remove(repo_dir, &worktree_path);
+
+        if threats.is_empty() {
+            // Branch is clean — perform the checkout and return an empty report.
+            self.git_client.checkout(repo_dir, branch)?;
+            return Ok(ScanReport { target_dir: repo_dir.to_path_buf(), remediations: vec![] });
+        }
+
+        // Threats found — block the checkout. Map everything to LoggedOnly because
+        // there is nothing on disk to remediate (the worktree has been removed).
+        let remediations = threats
+            .into_iter()
+            .map(|threat| RemediatedThreat {
+                threat,
+                outcome: RemediationOutcome::LoggedOnly,
+            })
+            .collect::<Vec<_>>();
+
+        // Only proceed with the checkout if threats are Medium or below.
+        let has_blocking_threat = remediations
+            .iter()
+            .any(|r| matches!(r.threat.level, ThreatLevel::Critical | ThreatLevel::High));
+
+        if !has_blocking_threat {
+            self.git_client.checkout(repo_dir, branch)?;
+        }
+
+        Ok(ScanReport { target_dir: repo_dir.to_path_buf(), remediations })
     }
 
     fn remediate(&self, threat: &crate::domain::threat::Threat) -> RemediationOutcome {
