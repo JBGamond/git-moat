@@ -23,46 +23,25 @@ impl GitClient for LocalGitClient {
         Ok(target_dir)
     }
 
-    fn worktree_add(
+    fn worktree_add_detached(
         &self,
         repo_dir: &Path,
-        branch: &str,
+        rev: &str,
         worktree_path: &Path,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let repo_str = repo_dir.to_str().ok_or("repo path is not valid UTF-8")?;
         let wt_str   = worktree_path.to_str().ok_or("worktree path is not valid UTF-8")?;
 
-        // First attempt: branch already exists locally or is a remote tracking ref.
         let status = Command::new("git")
-            .args(["-C", repo_str, "worktree", "add", wt_str, branch])
+            .args(["-C", repo_str, "worktree", "add", "--detach", wt_str, rev])
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .status()?;
 
         if status.success() {
-            return Ok(());
-        }
-
-        // Second attempt: fetch the branch from origin, then create the worktree
-        // with an explicit local tracking branch.
-        eprintln!("Branch '{}' not found locally — fetching from origin...", branch);
-        Command::new("git")
-            .args(["-C", repo_str, "fetch", "origin", branch])
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()?;
-
-        let remote_ref = format!("origin/{}", branch);
-        let status2 = Command::new("git")
-            .args(["-C", repo_str, "worktree", "add", "--track", "-b", branch, wt_str, &remote_ref])
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()?;
-
-        if status2.success() {
             Ok(())
         } else {
-            Err(format!("Could not create worktree for branch '{}' (local or remote).", branch).into())
+            Err(format!("Could not create detached worktree for rev '{}'.", rev).into())
         }
     }
 
@@ -100,6 +79,86 @@ impl GitClient for LocalGitClient {
             Ok(())
         } else {
             Err(format!("'git checkout {}' failed.", branch).into())
+        }
+    }
+
+    fn active_branch(&self, repo_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
+        let repo_str = repo_dir.to_str().ok_or("repo path is not valid UTF-8")?;
+        let output = Command::new("git")
+            .args(["-C", repo_str, "symbolic-ref", "--short", "HEAD"])
+            .output()?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        } else {
+            // It might be detached head or similar
+            let output2 = Command::new("git")
+                .args(["-C", repo_str, "rev-parse", "--abbrev-ref", "HEAD"])
+                .output()?;
+            if output2.status.success() {
+                Ok(String::from_utf8_lossy(&output2.stdout).trim().to_string())
+            } else {
+                Err("Could not determine active branch.".into())
+            }
+        }
+    }
+
+    fn fetch(&self, repo_dir: &Path, branch: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let repo_str = repo_dir.to_str().ok_or("repo path is not valid UTF-8")?;
+        let status = Command::new("git")
+            .args(["-C", repo_str, "fetch", "origin", branch])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Fetch failed.".into())
+        }
+    }
+
+    fn commits_behind(
+        &self,
+        repo_dir: &Path,
+        local_branch: &str,
+        remote_ref: &str,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let repo_str = repo_dir.to_str().ok_or("repo path is not valid UTF-8")?;
+
+        // Check if local branch exists
+        let check_local = Command::new("git")
+            .args(["-C", repo_str, "show-ref", "--verify", &format!("refs/heads/{}", local_branch)])
+            .output()?;
+
+        if !check_local.status.success() {
+            // Local branch does not exist yet. So yes, it is "late" / needs tracking.
+            return Ok(1);
+        }
+
+        let output = Command::new("git")
+            .args(["-C", repo_str, "rev-list", "--count", &format!("{}..{}", local_branch, remote_ref)])
+            .output()?;
+
+        if output.status.success() {
+            let count_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let count = count_str.parse::<usize>().unwrap_or(0);
+            Ok(count)
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn pull_fast_forward(&self, repo_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let repo_str = repo_dir.to_str().ok_or("repo path is not valid UTF-8")?;
+        let status = Command::new("git")
+            .args(["-C", repo_str, "pull", "--ff-only"])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Fast-forward pull/merge failed.".into())
         }
     }
 }
