@@ -20,6 +20,8 @@ _git-moat() {
       subcommands=(
         'clone:Clone a repository with threat scanning before opening'
         'checkout:Scan a branch in a temp worktree, then switch if safe'
+        'pull:Scan incoming commits on the current branch, then fast-forward if safe'
+        'fetch:Passthrough to git fetch (downloads refs, no working-tree changes)'
       )
       _describe 'subcommand' subcommands
       ;;
@@ -34,6 +36,35 @@ _git-moat() {
           remote_branches=(${(f)"$(git branch -r --format='%(refname:short)' 2>/dev/null | sed 's|^[^/]*/||' | sort -u)"})
           branches+=($remote_branches)
           _values 'branch' $branches
+          ;;
+        pull)
+          # pull takes no additional arguments in git-moat
+          ;;
+        fetch)
+          # First arg: remote name; subsequent args: flags or refspecs
+          if (( CURRENT == 2 )); then
+            local -a remotes
+            remotes=(${(f)"$(git remote 2>/dev/null)"})
+            local -a fetch_flags
+            fetch_flags=(
+              '--all[fetch from all remotes]'
+              '--prune[remove stale remote-tracking refs]'
+              '--tags[fetch all tags]'
+              '--depth[deepen a shallow clone]:depth'
+              '--unshallow[convert a shallow clone to a full one]'
+              '--dry-run[show what would be fetched]'
+              '(-v --verbose)'{-v,--verbose}'[be verbose]'
+              '(-q --quiet)'{-q,--quiet}'[suppress output]'
+            )
+            _describe 'remote' remotes
+            _arguments $fetch_flags
+          elif (( CURRENT == 3 )); then
+            # After remote: offer remote-tracking branches as refspecs
+            local remote=$words[2]
+            local -a refs
+            refs=(${(f)"$(git ls-remote --heads "$remote" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||')"})
+            _values 'refspec' $refs
+          fi
           ;;
         clone)
           # Pass through to git's own completion when available

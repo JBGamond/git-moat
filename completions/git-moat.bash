@@ -9,6 +9,14 @@ _git_moat_branches() {
   git branch -r --format='%(refname:short)' 2>/dev/null | sed 's|^[^/]*/||' | sort -u
 }
 
+_git_moat_remotes() {
+  git remote 2>/dev/null
+}
+
+_git_moat_fetch_flags() {
+  echo "--all --prune --tags --depth --unshallow --dry-run --verbose --quiet"
+}
+
 _git_moat() {
   local cur prev
   _init_completion 2>/dev/null || {
@@ -18,7 +26,7 @@ _git_moat() {
 
   # First word after git-moat: offer subcommands
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "clone checkout --help -h" -- "$cur"))
+    COMPREPLY=($(compgen -W "clone checkout pull fetch --help -h" -- "$cur"))
     return
   fi
 
@@ -31,6 +39,24 @@ _git_moat() {
         local branches
         branches=$(_git_moat_branches)
         COMPREPLY=($(compgen -W "$branches" -- "$cur"))
+      fi
+      ;;
+    pull)
+      # pull takes no additional arguments in git-moat
+      ;;
+    fetch)
+      # Complete remotes first, then flags
+      if [[ $COMP_CWORD -eq 2 ]]; then
+        local remotes flags
+        remotes=$(_git_moat_remotes)
+        flags=$(_git_moat_fetch_flags)
+        COMPREPLY=($(compgen -W "$remotes $flags" -- "$cur"))
+      elif [[ $COMP_CWORD -eq 3 ]]; then
+        # After remote: offer remote branches (refspecs)
+        local remote="${COMP_WORDS[2]}"
+        local refs
+        refs=$(git ls-remote --heads "$remote" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||')
+        COMPREPLY=($(compgen -W "$refs" -- "$cur"))
       fi
       ;;
     clone)
