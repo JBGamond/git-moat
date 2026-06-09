@@ -22,15 +22,6 @@ jobs:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             artifact: git-moat-linux-aarch64
-          - target: x86_64-apple-darwin
-            os: macos-13
-            artifact: git-moat-macos-x86_64
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            artifact: git-moat-macos-aarch64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            artifact: git-moat-windows-x86_64.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -63,16 +54,10 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Rename binary (Unix)
-        if: runner.os != 'Windows'
+      - name: Rename binary
         run: |
           cp target/${{ matrix.target }}/release/git-moat ${{ matrix.artifact }}
           chmod +x ${{ matrix.artifact }}
-
-      - name: Rename binary (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          cp target/${{ matrix.target }}/release/git-moat.exe ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

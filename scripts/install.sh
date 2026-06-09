@@ -6,7 +6,7 @@
 # the current platform.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/git-moat/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/JBGamond/git-moat/main/scripts/install.sh | bash
 #   bash scripts/install.sh                        # defaults to ~/.local/bin
 #   INSTALL_DIR=/usr/local/bin bash scripts/install.sh
 #   VERSION=v0.2.0 bash scripts/install.sh         # pin a specific release
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 BINARY="git-moat"
-REPO="YOUR_ORG/git-moat"          # ← replace with your GitHub org/repo
+REPO="JBGamond/git-moat"          # ← replace with your GitHub org/repo
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${VERSION:-latest}"
 
@@ -36,18 +36,10 @@ detect_target() {
   case "$os" in
     Linux)
       case "$arch" in
-        x86_64)  echo "git-moat-linux-x86_64" ;;
+        x86_64)        echo "git-moat-linux-x86_64" ;;
         aarch64|arm64) echo "git-moat-linux-aarch64" ;;
-        *) echo "" ;;
+        *)             echo "" ;;
       esac ;;
-    Darwin)
-      case "$arch" in
-        x86_64)  echo "git-moat-macos-x86_64" ;;
-        arm64)   echo "git-moat-macos-aarch64" ;;
-        *) echo "" ;;
-      esac ;;
-    MINGW*|MSYS*|CYGWIN*|Windows_NT)
-      echo "git-moat-windows-x86_64.exe" ;;
     *)
       echo "" ;;
   esac
