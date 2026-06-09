@@ -6,7 +6,6 @@ use git_moat::domain::service::SafeGitService;
 use git_moat::domain::threat::{RemediationOutcome, ThreatLevel};
 
 use std::env;
-use std::path::Path;
 use std::process;
 use colored::*;
 
