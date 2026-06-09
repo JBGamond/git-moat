@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use crate::ports::git::GitClient;
 
@@ -21,6 +21,86 @@ impl GitClient for LocalGitClient {
         }
 
         Ok(target_dir)
+    }
+
+    fn worktree_add(
+        &self,
+        repo_dir: &Path,
+        branch: &str,
+        worktree_path: &Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let repo_str = repo_dir.to_str().ok_or("repo path is not valid UTF-8")?;
+        let wt_str   = worktree_path.to_str().ok_or("worktree path is not valid UTF-8")?;
+
+        // First attempt: branch already exists locally or is a remote tracking ref.
+        let status = Command::new("git")
+            .args(["-C", repo_str, "worktree", "add", wt_str, branch])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?;
+
+        if status.success() {
+            return Ok(());
+        }
+
+        // Second attempt: fetch the branch from origin, then create the worktree
+        // with an explicit local tracking branch.
+        eprintln!("Branch '{}' not found locally — fetching from origin...", branch);
+        Command::new("git")
+            .args(["-C", repo_str, "fetch", "origin", branch])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?;
+
+        let remote_ref = format!("origin/{}", branch);
+        let status2 = Command::new("git")
+            .args(["-C", repo_str, "worktree", "add", "--track", "-b", branch, wt_str, &remote_ref])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?;
+
+        if status2.success() {
+            Ok(())
+        } else {
+            Err(format!("Could not create worktree for branch '{}' (local or remote).", branch).into())
+        }
+    }
+
+    fn worktree_remove(
+        &self,
+        repo_dir: &Path,
+        worktree_path: &Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let repo_str = repo_dir.to_str().ok_or("repo path is not valid UTF-8")?;
+        let wt_str   = worktree_path.to_str().ok_or("worktree path is not valid UTF-8")?;
+
+        Command::new("git")
+            .args(["-C", repo_str, "worktree", "remove", "--force", wt_str])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+
+        Ok(())
+    }
+
+    fn checkout(
+        &self,
+        repo_dir: &Path,
+        branch: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let repo_str = repo_dir.to_str().ok_or("repo path is not valid UTF-8")?;
+
+        let status = Command::new("git")
+            .args(["-C", repo_str, "checkout", branch])
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("'git checkout {}' failed.", branch).into())
+        }
     }
 }
 
