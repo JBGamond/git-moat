@@ -1,22 +1,56 @@
 # git-moat
 
-> A security-aware git wrapper that detects and neutralises supply-chain attack vectors **before you open or switch to a repository or branch**.
+> A security-aware git wrapper that detects and neutralises supply-chain attack vectors **before you open, switch to, or pull into a repository or branch**.
 
-Cloning a repository has always felt safe. [That changed](https://safedep.io/miasma-worm-ai-coding-agent-config-injection/) when the Miasma worm targeted developers by planting auto-executing payloads inside AI coding agent configs, VS Code tasks, and NPM scripts — triggered the moment a folder is opened, not when a package is installed. **git-moat** stands at the drawbridge: it clones or checks out the branch, scans every known attack surface in a temporary worktree, and blocks or remediates threats before any tool can fire them.
+Cloning a repository has always felt safe. [That changed](https://safedep.io/miasma-worm-ai-coding-agent-config-injection/) when the Miasma worm targeted developers by planting auto-executing payloads inside AI coding agent configs, VS Code tasks, and NPM scripts — triggered the moment a folder is opened, not when a package is installed. **git-moat** stands at the drawbridge: it clones, checks out, or pulls the branch, scans every known attack surface in a temporary worktree, and blocks or remediates threats before any tool can fire them.
 
 ---
 
 ## Installation
 
-### From source (recommended)
+### Pre-built binary (no Rust required)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JBGamond/git-moat/main/scripts/install.sh | bash
+```
+
+Installs to `~/.local/bin` by default. Override with `INSTALL_DIR`:
+
+```bash
+INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/JBGamond/git-moat/main/scripts/install.sh | bash
+```
+
+Pin a specific release with `VERSION=v0.2.0`.
+
+Pre-built binaries are available for:
+
+| Platform | Architecture |
+|---|---|
+| Linux | x86\_64, aarch64 |
+
+### From source
 
 ```bash
 git clone https://github.com/JBGamond/git-moat
 cd git-moat
-make install          # builds release binary and installs to ~/.local/bin
+make install          # builds release binary, installs to ~/.local/bin + shell completions
 ```
 
 Requires [Rust](https://rustup.rs) ≥ 1.70.
+
+### Shell completions
+
+Installed automatically by `make install` or `scripts/install.sh` (when run from a cloned repo). To enable manually:
+
+```bash
+# zsh — copy to a directory in $fpath
+cp completions/_git-moat ~/.local/share/zsh/site-functions/_git-moat
+autoload -Uz compinit && compinit
+
+# bash — source or copy to completions dir
+cp completions/git-moat.bash ~/.local/share/bash-completion/completions/git-moat
+source ~/.local/share/bash-completion/completions/git-moat
+```
 
 ---
 
@@ -33,7 +67,11 @@ git-moat clone --depth 1 -b main https://github.com/org/repo ./local-dir
 
 ### Checkout
 
-Scan a branch **before** switching to it. git-moat checks out the branch into a temporary worktree, runs all threat rules against it, removes the worktree, then performs the real switch only if the branch is safe.
+Scan a branch **before** switching to it. git-moat checks out the target branch into a temporary detached worktree, runs all threat rules against it, removes the worktree, then performs the real switch only if the branch is safe.
+
+If the local branch is **behind its remote tracking branch**, git-moat scans the remote's latest commits and fast-forwards only if they are clean.
+
+If the target branch is **already active**, the worktree step is skipped and git-moat simply checks whether a pull is needed.
 
 ```bash
 git-moat checkout feature/new-api
@@ -42,6 +80,30 @@ git-moat checkout feature/new-api
 - **Critical or High threats found** → checkout is blocked, threats are printed, exit 1.
 - **Medium threats found** → checkout proceeds with a warning.
 - **No threats** → switches normally.
+
+Tab-completion for branch names works in both bash and zsh.
+
+### Pull
+
+Secure equivalent of `git pull`. Fetches the remote tracking branch, scans the incoming commits in a temporary worktree, then fast-forwards only if clean.
+
+```bash
+git-moat pull
+```
+
+Always acts on the current branch. No arguments needed.
+
+### Fetch
+
+Passthrough to `git fetch`. Fetch only downloads refs and never modifies the working tree, so no scan is required.
+
+```bash
+git-moat fetch
+git-moat fetch --all --prune
+git-moat fetch origin main
+```
+
+Tab-completion offers remote names and common flags.
 
 ### Example output — clone
 
@@ -83,8 +145,6 @@ git-moat Repository:      /home/user/my-project
 ====================================================
 
 Scanning branch in temporary worktree — working tree untouched...
-  -> [1/8] Scanning for direct payloads and droppers (.github/setup.js)...
-  ...
 
 ⚠️  SECURITY ALERT: CHECKOUT BLOCKED ⚠️
 Branch contains Critical/High threats. Checkout was aborted.
@@ -140,7 +200,7 @@ git-moat is built around a hexagonal architecture with a strict domain / ports /
 src/
 ├── domain/
 │   ├── rules/          # One file per threat-detection rule (ThreatRule trait)
-│   ├── service.rs      # Use-case orchestrator: clone → scan → remediate
+│   ├── service.rs      # Use-case orchestrator: clone/checkout/pull → scan → remediate
 │   └── threat.rs       # Pure domain types (Threat, ThreatLevel, ScanReport)
 ├── ports/              # Trait interfaces (GitClient, ThreatAnalyzer, Sanitizer)
 └── adapters/           # Concrete implementations (real git, filesystem, rules engine)
