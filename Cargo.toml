@@ -1,0 +1,22 @@
+[package]
+name = "git-moat"
+version = "0.1.0"
+edition = "2021"
+description = "A security-aware git clone wrapper that detects and neutralises supply-chain attack vectors before you open a repository."
+license = "MIT"
+keywords = ["security", "git", "supply-chain", "malware"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "git_moat"
+path = "src/lib.rs"
+
+[[bin]]
+name = "git-moat"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+colored = "2.0"
+glob = "0.3"
