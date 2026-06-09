@@ -1,0 +1,49 @@
+#compdef git-moat
+
+# Zsh completion for git-moat.
+# Install to a directory in $fpath, e.g. ~/.local/share/zsh/site-functions/
+#
+# To activate immediately without reinstalling:
+#   autoload -Uz compinit && compinit
+
+_git-moat() {
+  local state
+
+  _arguments \
+    '(-h --help)'{-h,--help}'[show help]' \
+    '1: :->subcommand' \
+    '*:: :->args'
+
+  case $state in
+    subcommand)
+      local subcommands
+      subcommands=(
+        'clone:Clone a repository with threat scanning before opening'
+        'checkout:Scan a branch in a temp worktree, then switch if safe'
+      )
+      _describe 'subcommand' subcommands
+      ;;
+
+    args)
+      case $words[1] in
+        checkout)
+          # Reuse git's own branch source — local + unique remote names
+          local -a branches
+          branches=(${(f)"$(git branch --format='%(refname:short)' 2>/dev/null)"})
+          local -a remote_branches
+          remote_branches=(${(f)"$(git branch -r --format='%(refname:short)' 2>/dev/null | sed 's|^[^/]*/||' | sort -u)"})
+          branches+=($remote_branches)
+          _values 'branch' $branches
+          ;;
+        clone)
+          # Pass through to git's own completion when available
+          if (( $+functions[__git_complete_remote_or_refspec] )); then
+            _git
+          fi
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_git-moat "$@"
